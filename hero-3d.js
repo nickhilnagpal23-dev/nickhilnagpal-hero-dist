@@ -1204,27 +1204,40 @@ function buildNameWall() {   // the opener: Nickhil's name drawn onto the LED wa
   x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
   let fs = cv.height * 0.34; x.font = `700 ${fs}px Inter, "Helvetica Neue", Arial, sans-serif`;
   const fit = t => { while (x.measureText(t).width > cv.width * 0.84) { fs *= 0.96; x.font = `700 ${fs}px Inter, "Helvetica Neue", Arial, sans-serif`; } };
-  fit('NICKHIL NAGPAL'); x.fillText('NICKHIL NAGPAL', cv.width / 2, cv.height * 0.5);
-  const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.NoColorSpace;
+  fit('NICKHIL NAGPAL');
+  // v057: the name gets its own tight texture so it can move; its rest size is the old one (84 % of the wall's width)
+  const tw = x.measureText('NICKHIL NAGPAL').width, nc = document.createElement('canvas'); nc.width = Math.ceil(tw * 1.04); nc.height = Math.ceil(fs * 1.02);
+  const nx = nc.getContext('2d'); nx.fillStyle = '#fff'; nx.textAlign = 'center'; nx.textBaseline = 'middle'; nx.font = x.font; nx.fillText('NICKHIL NAGPAL', nc.width / 2, nc.height * 0.53);
+  const tx = new THREE.CanvasTexture(nc); tx.colorSpace = THREE.NoColorSpace;
+  NB.rest = 0.84 * nc.width / tw; NB.aspY = (nc.height / nc.width) * (W / H);   // size in wall-uv: height = width * aspY
+  // the rare-moment message, drawn the old way: across the whole wall
+  x.clearRect(0, 0, cv.width, cv.height); x.fillStyle = '#fff';
+  let ms = cv.height * 0.30; x.font = `700 ${ms}px Inter, "Helvetica Neue", Arial, sans-serif`; while (x.measureText('CORNER HIT').width > cv.width * 0.7) { ms *= 0.96; x.font = `700 ${ms}px Inter, "Helvetica Neue", Arial, sans-serif`; }
+  x.fillText('CORNER HIT', cv.width / 2, cv.height * 0.30);
+  x.font = `600 ${ms * 0.38}px Inter, "Helvetica Neue", Arial, sans-serif`; x.fillText('A RARE ONE \u2014 YOU CAUGHT IT', cv.width / 2, cv.height * 0.56);
+  const tmsg = new THREE.CanvasTexture(cv); tmsg.colorSpace = THREE.NoColorSpace;
   const cols = 220, rows = Math.round(cols * H / W);
   nameMat = new THREE.ShaderMaterial({ toneMapped:false, side:THREE.DoubleSide,
-    uniforms:{ tName:{ value:tx }, uP:{ value:0 }, uName:{ value:1 }, uBare:{ value:0 }, uT:{ value:0 },
+    uniforms:{ tName:{ value:tx }, tMsg:{ value:tmsg }, uMsg:{ value:0 }, uPos:{ value:new THREE.Vector2(0.5, 0.5) }, uSz:{ value:new THREE.Vector2(NB.rest, NB.rest * NB.aspY) }, uCol:{ value:new THREE.Vector3(1.0, 0.70, 0.33) }, uP:{ value:0 }, uName:{ value:1 }, uBare:{ value:0 }, uT:{ value:0 },
       c0:{ value:c.clone() }, rt:{ value:right }, uMin:{ value:u0 - c.clone().dot(new THREE.Vector3()) }, W:{ value:W }, H:{ value:H }, y0:{ value:box.min.y }, grid:{ value:new THREE.Vector2(cols, rows) } },
     vertexShader:`varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader:`uniform sampler2D tName; uniform float uP, uName, uBare, uT, uMin, W, H, y0; uniform vec3 c0, rt; uniform vec2 grid; varying vec3 vW;
+    fragmentShader:`uniform sampler2D tName, tMsg; uniform float uMsg; uniform vec2 uPos, uSz; uniform vec3 uCol; uniform float uP, uName, uBare, uT, uMin, W, H, y0; uniform vec3 c0, rt; uniform vec2 grid; varying vec3 vW;
       float h1(float n){ return fract(sin(n * 91.345) * 47453.13); }
       void main(){
         vec2 uv = vec2((dot(vW - c0, rt) - uMin) / W, (vW.y - y0) / H);
         vec2 q = uv * grid, cell = floor(q), cuv = (cell + 0.5) / grid; vec2 f = fract(q) - 0.5;
         float led = smoothstep(0.5, 0.28, length(f));
-        float a = texture2D(tName, cuv).r;
+        vec2 lq = (cuv - uPos) / uSz + 0.5;
+        float a = (lq.x > 0.0 && lq.x < 1.0 && lq.y > 0.0 && lq.y < 1.0) ? texture2D(tName, lq).r : 0.0;
+        float m = texture2D(tMsg, cuv).r * uMsg; a *= (1.0 - uMsg);
         float d = cuv.x * 0.55 + h1(cell.x) * 0.18 + h1(cell.y + 7.0) * 0.07;            // columns light left to right, with LED-scan jitter
         float lit = smoothstep(d, d + 0.08, uP);
         float scan = smoothstep(0.02, 0.0, abs(uv.x - (uP * 1.35 - 0.18))) * (1.0 - step(1.0, uP)) * 0.6;   // the leading edge
         vec3 off = vec3(0.016, 0.018, 0.024);
         vec3 bare = mix(vec3(0.30, 0.34, 0.46), vec3(0.62, 0.66, 0.80), uv.y) * (0.85 + 0.15 * sin(uT * 0.6 + uv.x * 3.0));
-        vec3 name = vec3(1.0, 0.70, 0.33) * 1.45;
-        vec3 col = off + bare * uBare + name * a * lit * uName + vec3(1.0, 0.8, 0.5) * scan * uName;
+        vec3 name = uCol * 1.45;
+        float tw = 0.75 + 0.25 * step(0.5, fract(uT * 3.0 + h1(cell.x + cell.y * 13.0)));   // the message sparkles
+        vec3 col = off + bare * uBare + name * a * lit * uName + vec3(1.0, 0.8, 0.5) * scan * uName + vec3(0.95, 0.92, 1.0) * 1.5 * m * tw * uName;
         gl_FragColor = vec4(col * led + off * (1.0 - led) * 0.5, 1.0);
         if (!gl_FrontFacing) gl_FragColor.rgb *= 0.25;
       }` });
@@ -1232,6 +1245,51 @@ function buildNameWall() {   // the opener: Nickhil's name drawn onto the LED wa
   owFrame = { c, toCam, W, H }; frameWallShots();
 }
 let owFrame = null;
+// v057: the name drifts and bounces inside the wall like a DVD logo; colour steps on each edge hit; a true corner hit is a rare moment
+const NB = { rest:1, aspY:0.2, sz:1, x:0.5, y:0.5, vx:0, vy:0, hitX:-9, hitY:-9, ci:0, on:false, k:0, msgT:-99, last:0, corner:/[?&]corner\b/.test(location.search), lastCorner:-99, ready:null };
+const NB_COLS = [[1.0, 0.70, 0.33], [0.96, 0.96, 1.0], [0.71, 0.55, 1.0], [1.0, 0.47, 0.14], [0.25, 0.88, 0.82]];   // amber (default), white, purple, orange, teal
+const NB_SIZE = 0.44, NB_IDLE = 10000;   // Nickhil 13:55: "Keep my name's current size and centered for a good 10 seconds. Only start the bouncing sequence if the user is idle."
+let nbAct = performance.now();
+['pointermove', 'pointerdown', 'wheel', 'scroll', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { nbAct = performance.now(); }, { passive:true }));
+const nbLive = Object.assign(document.createElement('p'), { className:'sr-only' }); nbLive.setAttribute('aria-live', 'polite'); nbLive.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; __R.getElementById('sticky').append(nbLive);
+function nbStart() {   // from wherever the name is now: a fresh direction, ~28-48 deg off horizontal
+  const sp = 0.075, ang = THREE.MathUtils.degToRad(28 + Math.random() * 20);
+  NB.vx = (Math.random() < 0.5 ? -1 : 1) * sp * Math.cos(ang); NB.vy = (Math.random() < 0.5 ? -1 : 1) * sp * Math.sin(ang) * owFrame.W / owFrame.H;
+  if (NB.corner) { const hw = NB_SIZE / 2, hh = NB_SIZE * NB.aspY / 2, tx = (1 - hw - 0.5) / Math.abs(NB.vx); NB.vy = Math.sign(NB.vy) * (1 - hh - 0.5) / tx; NB.corner = false; }
+}
+function nbTick(t, u, revealDone) {
+  const now = performance.now();
+  if (reduce || !revealDone) { NB.on = false; NB.k = 0; NB.x = 0.5; NB.y = 0.5; NB.ci = 0; NB.ready = null; NB.last = t; u.uMsg.value = 0; }
+  else {
+    if (NB.ready === null) NB.ready = now;
+    const dt = Math.min(0.05, Math.max(0, t - NB.last)); NB.last = t;
+    const idle = now - Math.max(nbAct, NB.ready) > NB_IDLE;
+    if (idle && !NB.on) { NB.on = true; if (NB.k < 0.01) { NB.x = 0.5; NB.y = 0.5; } nbStart(); }
+    if (!idle && NB.on) NB.on = false;                                     // activity: the screensaver ends, the name glides home
+    NB.k = THREE.MathUtils.clamp(NB.k + (NB.on ? dt / 1.4 : -dt / 0.9), 0, 1);   // 0 = centred at full size, 1 = bounce size
+    const e = THREE.MathUtils.smoothstep(NB.k, 0, 1); NB.sz = THREE.MathUtils.lerp(NB.rest, NB_SIZE, e);
+    const hw = NB.sz / 2, hh = NB.sz * NB.aspY / 2, inMsg = t - NB.msgT < 4.2;
+    if (NB.on && NB.k > 0.4 && !inMsg) {
+      NB.x += NB.vx * dt; NB.y += NB.vy * dt; let hx = false, hy = false;
+      if (NB.x < hw) { NB.x = hw; NB.vx = Math.abs(NB.vx); hx = true; } else if (NB.x > 1 - hw) { NB.x = 1 - hw; NB.vx = -Math.abs(NB.vx); hx = true; }
+      if (NB.y < hh) { NB.y = hh; NB.vy = Math.abs(NB.vy); hy = true; } else if (NB.y > 1 - hh) { NB.y = 1 - hh; NB.vy = -Math.abs(NB.vy); hy = true; }
+      if (hx) NB.hitX = t; if (hy) NB.hitY = t;
+      if (hx || hy) {
+        if (Math.abs(NB.hitX - NB.hitY) < 0.034 && t - NB.lastCorner > 5) {   // both edges within ~2 frames: a corner
+          NB.lastCorner = t; NB.msgT = t; nbLive.textContent = 'Rare moment: the name hit the corner of the LED wall.';
+        } else NB.ci = (NB.ci + 1) % NB_COLS.length;
+      }
+    } else if (!NB.on) {   // going home: ease back to the centre, colour back to the default
+      const g = 1 - Math.exp(-dt * 4); NB.x += (0.5 - NB.x) * g; NB.y += (0.5 - NB.y) * g; if (NB.k === 0) NB.ci = 0;
+    }
+    NB.x = THREE.MathUtils.clamp(NB.x, hw, 1 - hw); NB.y = THREE.MathUtils.clamp(NB.y, hh, 1 - hh);
+    const mk = t - NB.msgT; u.uMsg.value = mk < 4.2 ? THREE.MathUtils.smoothstep(mk, 0.25, 0.6) * (1 - THREE.MathUtils.smoothstep(mk, 3.6, 4.2)) : 0;
+  }
+  u.uPos.value.set(NB.x, NB.y); u.uSz.value.set(NB.sz, NB.sz * NB.aspY);
+  const mk = t - NB.msgT;
+  if (mk > 0 && mk < 0.25) u.uCol.value.set(1, 1, 1).multiplyScalar(0.6 + 0.6 * (1 - mk / 0.25));
+  else u.uCol.value.set(...(NB.on || NB.k > 0 ? NB_COLS[NB.ci] : NB_COLS[0]));
+}
 let wallAsp = 0;
 function frameWallShots() { if (!owFrame) return; const { c, toCam, W, H } = owFrame;
   const fov = 34, ph = innerWidth <= 800, asp = (innerWidth > 50 && innerHeight > 50) ? THREE.MathUtils.clamp(innerWidth / innerHeight, 0.45, 3.2) : 16 / 9, hf = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(fov * (ph ? 1.3 : 1) / 2)) * asp), vf = THREE.MathUtils.degToRad(fov * (ph ? 1.3 : 1)), d = Math.max((W * (ph ? 0.56 : 0.66)) / Math.tan(hf / 2), (H * 0.62) / Math.tan(vf / 2));   // v054: fit width and height (wall ≈ 80 % of frame height)
@@ -1308,6 +1366,7 @@ function introTick(t) {
 }
 const S0 = scene; let nameStart = null, bareStart = null;
 const monEl = __R.getElementById('monitor'), scrim = __R.getElementById('scrim'), doc = __R.getElementById('doccard');
+{ const beatsEl = __R.getElementById('beats'), cardsEl = document.createElement('div'); cardsEl.id = 'cards'; beatsEl.parentNode.insertBefore(cardsEl, beatsEl); cardsEl.append(dossier, __R.getElementById('owprints'), doc); }   // v057
 function storyTick3D(turnP) {
   const t = clock.getElapsedTime(), b = BEATS[beatI]; if (!b) return;
   // exactly one set on stage (the loader switches Happy Ending on when it finishes)
@@ -1326,7 +1385,8 @@ function storyTick3D(turnP) {
       const u = nameMat.uniforms; u.uT.value = t;
       u.uP.value = reduce ? 1.2 : (nameStart === null ? 1.2 : THREE.MathUtils.clamp((t - nameStart - 0.5) / 2.2, 0, 1.2));
       u.uName.value = b.wall === 'name' ? 1 : (reduce || bareStart === null ? 0 : Math.max(0, 1 - (t - bareStart) / 0.6));
-      u.uBare.value = b.wall === 'bare' ? (reduce ? 1 : Math.min(1, (t - bareStart) / 1.2)) : 0; }
+      u.uBare.value = b.wall === 'bare' ? (reduce ? 1 : Math.min(1, (t - bareStart) / 1.2)) : 0;
+      if (b.wall === 'name') nbTick(t, u, u.uP.value >= 1.2 && introPhase === 'done'); else { u.uMsg.value = 0; } }
   }
   // the monitor arrives after the beat's text, never with a new set piece
   const wantMon = b.monitor && turnP < 0.3 && beatF >= beatI - 0.02 ? b.setup : null;
