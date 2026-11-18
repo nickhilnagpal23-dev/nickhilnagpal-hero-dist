@@ -1255,10 +1255,22 @@ const NB_SIZE = 0.44, NB_IDLE = 10000;   // Nickhil 13:55: "Keep my name's curre
 let nbAct = performance.now();
 ['pointermove', 'pointerdown', 'wheel', 'scroll', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, () => { nbAct = performance.now(); }, { passive:true }));
 const nbLive = Object.assign(document.createElement('p'), { className:'sr-only' }); nbLive.setAttribute('aria-live', 'polite'); nbLive.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap'; __R.getElementById('sticky').append(nbLive);
+const NB_V = { x0:0, x1:1, y0:0, y1:1 }, nbP = new THREE.Vector3();
+function nbBounds() {   // v058: visible wall rectangle in wall-uv (on screen with a 3 % margin, above the floor)
+  const u = nameMat.uniforms, c = owFrame.c, W = owFrame.W, H = owFrame.H, rt = u.rt.value, um = u.uMin.value, wy0 = u.y0.value;
+  camera.updateMatrixWorld();
+  const fy = v => { nbP.copy(c); nbP.y = wy0 + v * H; return nbP.project(camera).y; };
+  const fx = x => { nbP.copy(c).addScaledVector(rt, um + x * W); nbP.y = c.y; return nbP.project(camera).x; };
+  const solve = (f, target) => { const up = f(1) > f(0); let lo = 0, hi = 1; const g = v => up ? f(v) : -f(v), tg = up ? target : -target;
+    if (g(1) <= tg) return 1; if (g(0) >= tg) return 0; for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (g(m) < tg) lo = m; else hi = m; } return (lo + hi) / 2; };
+  const yb = Math.max(solve(fy, -0.97), (0.06 - wy0) / H), yt = solve(fy, 0.97);
+  const xa = solve(fx, -0.97), xb = solve(fx, 0.97);
+  NB_V.y0 = Math.min(yb, 0.5); NB_V.y1 = Math.max(yt, 0.5); NB_V.x0 = Math.min(xa, xb, 0.5); NB_V.x1 = Math.max(xa, xb, 0.5);
+}
 function nbStart() {   // from wherever the name is now: a fresh direction, ~28-48 deg off horizontal
   const sp = 0.075, ang = THREE.MathUtils.degToRad(28 + Math.random() * 20);
   NB.vx = (Math.random() < 0.5 ? -1 : 1) * sp * Math.cos(ang); NB.vy = (Math.random() < 0.5 ? -1 : 1) * sp * Math.sin(ang) * owFrame.W / owFrame.H;
-  if (NB.corner) { const hw = NB_SIZE / 2, hh = NB_SIZE * NB.aspY / 2, tx = (1 - hw - 0.5) / Math.abs(NB.vx); NB.vy = Math.sign(NB.vy) * (1 - hh - 0.5) / tx; NB.corner = false; }
+  if (NB.corner) { nbBounds(); const hw = NB_SIZE / 2, hh = NB_SIZE * NB.aspY / 2, ex = NB.vx > 0 ? NB_V.x1 - hw : NB_V.x0 + hw, ey = NB.vy > 0 ? NB_V.y1 - hh : NB_V.y0 + hh, tx = (ex - NB.x) / NB.vx; NB.vy = (ey - NB.y) / tx; NB.corner = false; }
 }
 function nbTick(t, u, revealDone) {
   const now = performance.now();
@@ -1272,11 +1284,12 @@ function nbTick(t, u, revealDone) {
     if (!idle && NB.on) NB.on = false;                                     // activity: the screensaver ends, the name glides home
     NB.k = THREE.MathUtils.clamp(NB.k + (NB.on ? dt / 1.4 : -dt / 0.9), 0, 1);   // 0 = centred at full size, 1 = bounce size
     const e = THREE.MathUtils.smoothstep(NB.k, 0, 1); NB.sz = THREE.MathUtils.lerp(NB.rest, NB_SIZE, e);
-    const hw = NB.sz / 2, hh = NB.sz * NB.aspY / 2, inMsg = t - NB.msgT < 4.2;
+    nbBounds(); const hw = NB.sz / 2, hh = NB.sz * NB.aspY / 2, inMsg = t - NB.msgT < 4.2;
+    const X0 = Math.min(NB_V.x0 + hw, 0.5), X1 = Math.max(NB_V.x1 - hw, 0.5), Y0 = Math.min(NB_V.y0 + hh, 0.5), Y1 = Math.max(NB_V.y1 - hh, 0.5);
     if (NB.on && NB.k > 0.4 && !inMsg) {
       NB.x += NB.vx * dt; NB.y += NB.vy * dt; let hx = false, hy = false;
-      if (NB.x < hw) { NB.x = hw; NB.vx = Math.abs(NB.vx); hx = true; } else if (NB.x > 1 - hw) { NB.x = 1 - hw; NB.vx = -Math.abs(NB.vx); hx = true; }
-      if (NB.y < hh) { NB.y = hh; NB.vy = Math.abs(NB.vy); hy = true; } else if (NB.y > 1 - hh) { NB.y = 1 - hh; NB.vy = -Math.abs(NB.vy); hy = true; }
+      if (NB.x < X0) { NB.x = X0; NB.vx = Math.abs(NB.vx); hx = true; } else if (NB.x > X1) { NB.x = X1; NB.vx = -Math.abs(NB.vx); hx = true; }
+      if (NB.y < Y0) { NB.y = Y0; NB.vy = Math.abs(NB.vy); hy = true; } else if (NB.y > Y1) { NB.y = Y1; NB.vy = -Math.abs(NB.vy); hy = true; }
       if (hx) NB.hitX = t; if (hy) NB.hitY = t;
       if (hx || hy) {
         if (Math.abs(NB.hitX - NB.hitY) < 0.034 && t - NB.lastCorner > 5) {   // both edges within ~2 frames: a corner
@@ -1286,7 +1299,7 @@ function nbTick(t, u, revealDone) {
     } else if (!NB.on) {   // going home: ease back to the centre, colour back to the default
       const g = 1 - Math.exp(-dt * 4); NB.x += (0.5 - NB.x) * g; NB.y += (0.5 - NB.y) * g; if (NB.k === 0) NB.ci = 0;
     }
-    NB.x = THREE.MathUtils.clamp(NB.x, hw, 1 - hw); NB.y = THREE.MathUtils.clamp(NB.y, hh, 1 - hh);
+    if (NB.on) { NB.x = THREE.MathUtils.clamp(NB.x, X0, X1); NB.y = THREE.MathUtils.clamp(NB.y, Y0, Y1); }
     const mk = t - NB.msgT; u.uMsg.value = mk < 4.2 ? THREE.MathUtils.smoothstep(mk, 0.25, 0.6) * (1 - THREE.MathUtils.smoothstep(mk, 3.6, 4.2)) : 0;
   }
   u.uPos.value.set(NB.x, NB.y); u.uSz.value.set(NB.sz, NB.sz * NB.aspY);
