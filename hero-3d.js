@@ -1,5 +1,6 @@
 const { host: __H, root: __R } = globalThis.__nnHero;   // embed: everything lives in the hero's shadow root
-const NN_LIFT = () => Math.min(0.14, (parseFloat(getComputedStyle(__H).getPropertyValue('--nn-top')) || 0) / innerHeight * 0.9);
+let nnLift = 0;
+const NN_LIFT = () => Math.min(0.24, (parseFloat(getComputedStyle(__H).getPropertyValue('--nn-top')) || 0) / innerHeight * 1.8);
 
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/+esm';
 import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js/+esm';
@@ -1328,7 +1329,8 @@ function frame() {
   pOM.style.opacity = turnP > 0.5 ? (turnP - 0.5) * 2 : 0; pOM.style.pointerEvents = turnP > 0.7 ? 'auto' : 'none';
   stmt.style.opacity = (p > 0.08 && p < 0.3) ? 1 : 0;
   const side = THREE.MathUtils.lerp(1, -1, turnP);
-  const w = innerWidth, h = innerHeight; offK += (STORY_OFFK - offK) * (reduce ? 1 : 0.06);   // v049 offY += (((innerWidth <= 800 ? 0.2 : 0) + (beatI === 0 ? NN_LIFT() : 0)) - offY) * (reduce ? 1 : 0.06);   // embed: on the first screen, lift the 3D by the navbar's share so the lit wall clears the text camera.setViewOffset(w, h, innerWidth > 800 ? -side * w * offK : 0, offY * h, w, h);
+  const w = innerWidth, h = innerHeight; offK += (STORY_OFFK - offK) * (reduce ? 1 : 0.06);   // v049 offY += ((innerWidth <= 800 ? (card.style.opacity === '1' ? 0.31 : 0.2) : (card.style.opacity === '1' && turnP < 0.5 && dossier.className === 'bottom' ? 0.09 : 0)) - offY) * (reduce ? 1 : 0.06); camera.setViewOffset(w, h, innerWidth > 800 ? -side * w * offK : 0, offY * h, w, h);
+  nnLift += ((beatI === 0 ? NN_LIFT() : 0) - nnLift) * (reduce ? 1 : 0.08); if (Math.abs(nnLift) > 1e-4) camera.setViewOffset(w, h, 0, nnLift * h, w, h); else if (camera.view && camera.view.enabled) camera.clearViewOffset();   // embed: first screen lifts the 3D by the navbar's share
   { const e = reduce ? 1 : THREE.MathUtils.smoothstep(t - swapStart, 0, 0.35); for (const kk in setups) if (kk === active && setups[kk]) setups[kk].position.y = -0.4 * (1 - e); }
   const sh = SHOTS[shotKey] || SHOTS.base;
   if (editing && controls) { controls.update(); curPos.copy(camera.position); curLook.copy(controls.target); curFov = camera.fov; }
