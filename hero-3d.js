@@ -1206,8 +1206,11 @@ function buildNameWall() {   // the opener: Nickhil's name drawn onto the LED wa
   const fit = t => { while (x.measureText(t).width > cv.width * 0.84) { fs *= 0.96; x.font = `700 ${fs}px Inter, "Helvetica Neue", Arial, sans-serif`; } };
   fit('NICKHIL NAGPAL');
   // v057: the name gets its own tight texture so it can move; its rest size is the old one (84 % of the wall's width)
-  const tw = x.measureText('NICKHIL NAGPAL').width, nc = document.createElement('canvas'); nc.width = Math.ceil(tw * 1.04); nc.height = Math.ceil(fs * 1.02);
-  const nx = nc.getContext('2d'); nx.fillStyle = '#fff'; nx.textAlign = 'center'; nx.textBaseline = 'middle'; nx.font = x.font; nx.fillText('NICKHIL NAGPAL', nc.width / 2, nc.height * 0.53);
+  x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+  const gm = x.measureText('NICKHIL NAGPAL'), gl = gm.actualBoundingBoxLeft, gr = gm.actualBoundingBoxRight, ga = gm.actualBoundingBoxAscent, gd = gm.actualBoundingBoxDescent;
+  const tw = gl + gr, pad = 2, nc = document.createElement('canvas'); nc.width = Math.ceil(tw) + pad * 2; nc.height = Math.ceil(ga + gd) + pad * 2;   // v058: the glyphs' own box
+  const nx = nc.getContext('2d'); nx.fillStyle = '#fff'; nx.textAlign = 'left'; nx.textBaseline = 'alphabetic'; nx.font = x.font; nx.fillText('NICKHIL NAGPAL', pad + gl, pad + ga);
+  x.textAlign = 'center'; x.textBaseline = 'middle';
   const tx = new THREE.CanvasTexture(nc); tx.colorSpace = THREE.NoColorSpace;
   NB.rest = 0.84 * nc.width / tw; NB.aspY = (nc.height / nc.width) * (W / H);   // size in wall-uv: height = width * aspY
   // the rare-moment message, drawn the old way: across the whole wall
@@ -1246,7 +1249,7 @@ function buildNameWall() {   // the opener: Nickhil's name drawn onto the LED wa
 }
 let owFrame = null;
 // v057: the name drifts and bounces inside the wall like a DVD logo; colour steps on each edge hit; a true corner hit is a rare moment
-const NB = { rest:1, aspY:0.2, sz:1, x:0.5, y:0.5, vx:0, vy:0, hitX:-9, hitY:-9, ci:0, on:false, k:0, msgT:-99, last:0, corner:/[?&]corner\b/.test(location.search), lastCorner:-99, ready:null };
+const NB = { rest:1, aspY:0.2, sz:null, x:0.5, y:0.5, vx:0, vy:0, hitX:-9, hitY:-9, ci:0, on:false, k:0, msgT:-99, last:0, corner:/[?&]corner\b/.test(location.search), lastCorner:-99, ready:null };
 const NB_COLS = [[1.0, 0.70, 0.33], [0.96, 0.96, 1.0], [0.71, 0.55, 1.0], [1.0, 0.47, 0.14], [0.25, 0.88, 0.82]];   // amber (default), white, purple, orange, teal
 const NB_SIZE = 0.44, NB_IDLE = 10000;   // Nickhil 13:55: "Keep my name's current size and centered for a good 10 seconds. Only start the bouncing sequence if the user is idle."
 let nbAct = performance.now();
@@ -1259,7 +1262,8 @@ function nbStart() {   // from wherever the name is now: a fresh direction, ~28-
 }
 function nbTick(t, u, revealDone) {
   const now = performance.now();
-  if (reduce || !revealDone) { NB.on = false; NB.k = 0; NB.x = 0.5; NB.y = 0.5; NB.ci = 0; NB.ready = null; NB.last = t; u.uMsg.value = 0; }
+  if (NB.sz === null) NB.sz = NB.rest;
+  if (reduce || !revealDone) { NB.on = false; NB.k = 0; NB.sz = NB.rest; NB.x = 0.5; NB.y = 0.5; NB.ci = 0; NB.ready = null; NB.last = t; u.uMsg.value = 0; }
   else {
     if (NB.ready === null) NB.ready = now;
     const dt = Math.min(0.05, Math.max(0, t - NB.last)); NB.last = t;
