@@ -1266,6 +1266,46 @@ queueMicrotask(() => doc.querySelectorAll('a').forEach(a => a.addEventListener('
 const owPrints = __R.getElementById('owprints');
 const CREDITS = { outerwest:'Dir. Aidan Eck \u00b7 DP Kade McKenna', losangles:'Dir. Aidan Eck \u00b7 DP Kade McKenna',
   happyending:'Dir. Xihe Huang \u00b7 DP Haoxiang \u201cDaniel\u201d Qi' };   // decision (60); HE from Gate A (66)
+
+// ==== v056: soft launch =================================================================================
+const INTRO_EL = __H;
+let introPhase = 'wait', introT0 = 0, introExpo = 1, introLate = false;
+const introBorn = performance.now();
+function introSkipCheck() { return beatF > 0.15; }   // the page loaded (or was moved) away from the first screen
+function introFinish() {
+  if (introPhase === 'done') return; introPhase = 'done'; introExpo = 1;
+  if (nameStart !== null && !reduce) nameStart = Math.min(nameStart, clock.getElapsedTime() - 3);
+  INTRO_EL.classList.remove('intro-wait', 'intro-text', 'intro-page');
+  dispatchEvent(new CustomEvent('nn-intro', { detail:'done' }));
+}
+function introSkip() {
+  if (introPhase === 'done') return;
+  if (introPhase === 'wait') { if (!introLate) { introLate = true; INTRO_EL.classList.remove('intro-text', 'intro-page'); dispatchEvent(new CustomEvent('nn-intro', { detail:'done' })); } return; }   // still loading: words now, 3D when ready
+  introFinish();
+}
+['wheel', 'touchmove', 'keydown', 'pointerdown'].forEach(ev => addEventListener(ev, introSkip, { passive:true }));
+function introTick(t) {
+  if (introPhase === 'done') return;
+  if (introPhase === 'wait' && !introLate && performance.now() - introBorn > 8000) {   // never hold the page hostage: words + page now, 3D when it is truly ready
+    introLate = true; INTRO_EL.classList.remove('intro-text', 'intro-page'); dispatchEvent(new CustomEvent('nn-intro', { detail:'done' }));
+  }
+  if (introPhase === 'wait') {
+    if (introSkipCheck()) return introFinish();
+    if (!(owSplit && nameMat && SHOTS.owName && setups.outerwest)) { introExpo = 0; return; }
+    // ready: camera already in its shot (no swoop), no set rise, canvas shown, name reveal starts now
+    const sh = SHOTS[shotKey] || SHOTS.owName; curPos.fromArray(sh.pos); curLook.fromArray(sh.look); curFov = sh.fov; swapStart = -10;
+    introPhase = 'run'; introT0 = t; nameStart = null;
+    INTRO_EL.classList.remove('intro-wait');
+    if (reduce || introLate) { if (introLate && !reduce) { introPhase = 'late'; introT0 = t; return; } return introFinish(); }
+    dispatchEvent(new CustomEvent('nn-intro', { detail:'lit' }));
+    return;
+  }
+  const k = t - introT0;
+  if (introPhase === 'late') { introExpo = THREE.MathUtils.smoothstep(k, 2.3, 3.7); if (k > 3.8) { introPhase = 'done'; introExpo = 1; } return; }
+  introExpo = THREE.MathUtils.smoothstep(k, 2.3, 3.7);          // the room lights up from the wall once the name has landed
+  if (k > 3.3) INTRO_EL.classList.remove('intro-text');           // then the words
+  if (k > 4.0) introFinish();                                     // then the page
+}
 const S0 = scene; let nameStart = null, bareStart = null;
 const monEl = __R.getElementById('monitor'), scrim = __R.getElementById('scrim'), doc = __R.getElementById('doccard');
 function storyTick3D(turnP) {
@@ -1318,7 +1358,7 @@ function frame() {
   if (om) { om.visible = turnP > 0.5; stageOnly.forEach(o => o.visible = turnP < 0.5 && !((active === 'losangles' || active === 'outerwest' || active === 'happyending') && setups[active] && setups[active].visible));
     const laOn = turnP < 0.5 && active === 'losangles' && setups.losangles && setups.losangles.visible; const owOn = turnP < 0.5 && active === 'outerwest' && setups.outerwest && setups.outerwest.visible; const heOn = turnP < 0.5 && active === 'happyending' && setups.happyending && setups.happyending.visible; const lit = turnP > 0.5 || laOn || owOn || heOn;
     hemi.intensity = lit ? 0.12 : 0.9; key.intensity = lit ? 0 : 1.2;
-    renderer.toneMapping = lit ? THREE.AgXToneMapping : THREE.NoToneMapping; renderer.toneMappingExposure = 1.1;
+    renderer.toneMapping = lit ? THREE.AgXToneMapping : THREE.NoToneMapping; renderer.toneMappingExposure = 1.1 * Math.max(0.02, introExpo);   // v056: soft launch
     if (om.visible) omMixer.setTime((t % (132/24)));
     const fadeIn = THREE.MathUtils.smoothstep(turnP, 0.55, 0.8);
     if (turnP >= 0.98) { if (settledAt === null) settledAt = t; } else if (turnP < 0.9) settledAt = null;
@@ -1349,6 +1389,7 @@ function frame() {
   if (omCam && camBlend > 0) { omCam.updateWorldMatrix(true, false);
     const p2 = new THREE.Vector3(), q2 = new THREE.Quaternion(); omCam.matrixWorld.decompose(p2, q2, new THREE.Vector3());
     camera.position.lerp(p2, camBlend); camera.quaternion.slerp(q2, camBlend); camera.fov = THREE.MathUtils.lerp(curFov, omCam.fov, camBlend); }
+  introTick(t);   // v056
   storyTick3D(turnP);   // v050
   camera.updateProjectionMatrix();
   if (laLEDMat && setups.losangles && setups.losangles.visible) { const sl = setups.losangles; sl.updateMatrixWorld(true);
