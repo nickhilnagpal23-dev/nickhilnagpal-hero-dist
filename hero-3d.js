@@ -951,6 +951,76 @@ function buildOM() {
   return g;
 }
 
+// ---- v059: holographic vinyl turntable ----
+function holoVinyl(root) {
+  const disc = root.getObjectByName('TURNTABLE'), edge = root.getObjectByName('TURNTABLE_edge');
+  if (!disc) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, t0 = performance.now();
+  const U = { uTime: { value: 0 } };
+  disc.material = new THREE.ShaderMaterial({ uniforms: U,
+    vertexShader: `varying vec3 vP; varying vec3 vW; void main(){ vP = position; vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uTime; varying vec3 vP; varying vec3 vW;
+      float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      void main(){
+        float r = length(vP.xz), a = atan(vP.z, vP.x);
+        vec3 col = mix(vec3(0.030,0.034,0.055), vec3(0.042,0.048,0.078), smoothstep(10.8, 1.0, r));
+        // grooves, faded out where they would alias
+        float f = 38.0, w = fwidth(r) * f, g = 0.5 + 0.5 * sin(r * f);
+        float gr = (1.0 - smoothstep(0.4, 1.4, w)) * step(2.45, r) * step(r, 10.6);
+        // track gaps
+        float gap = 0.0; for (int i = 0; i < 3; i++) { float rr = 4.3 + float(i) * 2.1; gap = max(gap, 1.0 - smoothstep(0.0, 0.07, abs(r - rr))); }
+        // holographic sheen: two opposite light streaks across the grooves, slowly travelling
+        float sh = pow(abs(cos(a - 0.6 + uTime * 0.05)), 14.0);
+        vec3 iri = 0.5 + 0.5 * cos(6.2832 * (r * 0.06 + a * 0.08 + uTime * 0.02 + vec3(0.0, 0.18, 0.42)));
+        iri = mix(vec3(1.0, 0.72, 0.36), iri, 0.35);
+        col += iri * sh * (0.015 + 0.04 * g * gr) * (1.0 - gap);
+        col += vec3(0.010,0.012,0.020) * g * gr * (1.0 - gap);
+        col *= 1.0 - 0.30 * gap;
+        // centre label + spindle
+        float lab = 1.0 - smoothstep(2.2, 2.24, r);
+        float lr = smoothstep(0.86, 0.97, abs(fract(r * 2.2) - 0.5) * 2.0);
+        vec3 lc = vec3(0.036,0.040,0.064) + vec3(0.95,0.66,0.30) * lr * 0.12 + vec3(0.45,0.30,0.12) * 0.04 * pow(abs(cos(a - 0.6 + uTime * 0.05)), 6.0);
+        col = mix(col, lc, lab);
+        col = mix(col, vec3(0.30,0.27,0.22), 1.0 - smoothstep(0.10, 0.13, r));
+        col = mix(col, vec3(0.01), 1.0 - smoothstep(0.05, 0.07, r));
+        col += vec3(1.0,0.78,0.45) * 0.10 * (1.0 - smoothstep(0.0, 0.025, abs(r - 2.23)));
+        // star dots
+        vec2 c = floor(vP.xz / 0.32), q = fract(vP.xz / 0.32) - 0.5; float hh = h21(c);
+        float st = step(0.86, hh) * (1.0 - smoothstep(0.02, 0.06, length(q - (vec2(h21(c + 7.0), h21(c + 3.0)) - 0.5) * 0.6)));
+        col += vec3(0.95,0.90,0.80) * st * (0.08 + 0.06 * sin(uTime * (0.6 + hh * 2.0) + hh * 40.0)) * (1.0 - lab);
+        // warm gold glow (one quadrant) + rim
+        col += vec3(0.85,0.50,0.16) * 0.05 * exp(-dot(vP.xz - vec2(6.5, 6.0), vP.xz - vec2(6.5, 6.0)) / 22.0);
+        col += vec3(1.0,0.85,0.60) * 0.12 * (1.0 - smoothstep(0.0, 0.05, abs(r - 10.85)));
+        if (vP.y < -0.01) col = vec3(0.04,0.045,0.07);
+        gl_FragColor = vec4(col, 1.0);
+      }` });
+  disc.onBeforeRender = () => { U.uTime.value = still ? 0 : (performance.now() - t0) / 1000; };
+  if (edge) edge.material = new THREE.MeshStandardMaterial({ color:0x2a2418, roughness:0.35, metalness:0.8, emissive:new THREE.Color(0.30, 0.20, 0.08), emissiveIntensity:0.2 });
+  // low-poly plexus: jittered rings, strip-triangulated ring to ring
+  let seed = 16; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const rings = []; for (let i = 0; i < 7; i++) { const R = 2.7 + i * 1.3, n = Math.round(2 * Math.PI * R / 1.7), ring = [];
+    for (let k = 0; k < n; k++) { const t = (k + 0.5 + (rnd() - 0.5) * 0.6) / n * 6.2832, rr = R + (rnd() - 0.5) * 0.7; ring.push([Math.cos(t) * rr, Math.sin(t) * rr, t]); } rings.push(ring); }
+  const tris = [];
+  for (let i = 0; i < rings.length - 1; i++) { const A = rings[i], B = rings[i + 1]; let ia = 0, ib = 0;
+    const ang = (P, k) => P[k % P.length][2] + Math.floor(k / P.length) * 6.2832;
+    while (ia < A.length || ib < B.length) { const a0 = A[ia % A.length], b0 = B[ib % B.length];
+      if (ib >= B.length || (ia < A.length && ang(A, ia + 1) < ang(B, ib + 1))) { tris.push([a0, A[(ia + 1) % A.length], b0]); ia++; }
+      else { tris.push([a0, B[(ib + 1) % B.length], b0]); ib++; } } }
+  const y = 0.012, lp = [], fp = [], fc = [], seen = new Set(), key = (p) => p[0].toFixed(3) + ',' + p[1].toFixed(3);
+  for (const t of tris) {
+    for (let e = 0; e < 3; e++) { const p = t[e], q = t[(e + 1) % 3], k = [key(p), key(q)].sort().join('|'); if (seen.has(k)) continue; seen.add(k); lp.push(p[0], y + 0.002, p[1], q[0], y + 0.002, q[1]); }
+    if (rnd() < 0.2) { const b = 0.35 + rnd() * 0.65; for (const p of t) { fp.push(p[0], y, p[1]); fc.push(1.0 * b, 0.50 * b, 0.10 * b); } } }
+  const holo = new THREE.Group(); holo.name = 'HOLO_vinyl';
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+  holo.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color:0xf3e6c8, transparent:true, opacity:0.07, blending:THREE.AdditiveBlending, depthWrite:false })));
+  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3)); fg.setAttribute('color', new THREE.Float32BufferAttribute(fc, 3));
+  holo.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, opacity:0.07, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide })));
+  const pp = []; for (const R of rings) for (const p of R) pp.push(p[0], y + 0.004, p[1]);
+  const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3));
+  holo.add(new THREE.Points(pg, new THREE.PointsMaterial({ color:0xfff1d6, size:0.045, transparent:true, opacity:0.25, depthWrite:false })));
+  disc.parent.add(holo); holo.position.copy(disc.position); holo.quaternion.copy(disc.quaternion);
+}
+
 let om, omMixer, omCam, omLights, neutralRef, stageOnly = [], creditMats = [], creditMeshes = [], settledAt = null;
 (async () => {
   const neutral = await load('hero_stage_neutral_v002.glb'); turn.add(neutral);
@@ -961,7 +1031,7 @@ let om, omMixer, omCam, omLights, neutralRef, stageOnly = [], creditMats = [], c
   setups.outerwest = buildOW(); owFigures(setups.outerwest, setups.losangles); addVeniceRig(setups.losangles, new THREE.Vector3(...LA_PROJ.cam_pos), THREE.MathUtils.radToDeg(Math.asin(LA_PROJ.cam_fwd[1])), 'la', /^CAM_la_body$/); addVeniceRig(setups.outerwest, new THREE.Vector3(0, OW.C[2], 0), OW.pitch, 'ow', /^CAM_ow_body$/); addVeniceRig(setups.happyending, new THREE.Vector3(0, HE.C[2], 0), HE.pitch, 'he', null, { tripod:false });
   for (const k in setups) { setups[k].visible = false; turn.add(setups[k]); }
   neutralRef = neutral;
-  const grid = new THREE.PolarGridHelper(10.9, 16, 22, 96, 0x4a4a4a, 0x2a2a2a); grid.position.y = 0.005; turn.add(grid);
+  const grid = new THREE.PolarGridHelper(10.9, 16, 22, 96, 0x4a4a4a, 0x2a2a2a); grid.position.y = 0.005; turn.add(grid); grid.visible = false; holoVinyl(neutral);
   stageOnly = []; neutral.traverse(o => { if (/CAM_|FRUSTUM/.test(o.name)) stageOnly.push(o); });
   const g = await loadFull('hero_om_sc01_v005.glb');
   om = new THREE.Group(); om.add(g.scene); om.rotation.y = Math.PI; turn.add(om);
