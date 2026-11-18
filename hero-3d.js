@@ -951,50 +951,34 @@ function buildOM() {
   return g;
 }
 
-// ---- v061 (on v060): holographic vinyl turntable, rim only (outline after the painted wall; grooves + vibration) ----
+// ---- v062: holographic vinyl turntable as a faceted object (normals lit, gold edge outline) ----
 function holoVinyl(root) {
   const disc = root.getObjectByName('TURNTABLE'), edge = root.getObjectByName('TURNTABLE_edge');
   if (!disc) return;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches, t0 = performance.now();
   const U = { uTime: { value: 0 } };
-  disc.material = new THREE.ShaderMaterial({ uniforms: U,
+  const tick = () => { U.uTime.value = still ? 0 : (performance.now() - t0) / 1000; };
+  const smooth = (e0, e1, x) => { const k = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return k * k * (3 - 2 * k); };
+  const RIM = (x, z) => smooth(5.6, 9.4, Math.hypot(x, z));
+  // base disc: only the centre label + spindle show (the facet mesh covers the rest)
+  disc.material = new THREE.ShaderMaterial({
     vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `uniform float uTime; varying vec3 vP;
-      void main(){
-        float r = length(vP.xz), a = atan(vP.z, vP.x), t = uTime;
-        vec3 col = mix(vec3(0.028,0.031,0.050), vec3(0.040,0.045,0.072), smoothstep(10.8, 1.0, r));
-        // vibration: the groove radius wobbles like a cut waveform, and a slow pressure ring travels outward
-        float wob = 0.020 * sin(a * 9.0 + t * 1.1) * sin(r * 1.3 - t * 0.7) + 0.010 * sin(a * 23.0 - t * 1.9);
-        float rv = r + wob;
-        float f = 30.0, w = fwidth(rv) * f;
-        float groove = abs(fract(rv * f / 6.2832) - 0.5) * 2.0;                 // 0 at groove floor, 1 at ridge
-        float line = smoothstep(0.55, 0.95, groove) * (1.0 - smoothstep(0.35, 1.2, w));
-        float band = step(2.35, r) * step(r, 10.65);
-        float tracks = 1.0; for (int i = 0; i < 3; i++) tracks *= smoothstep(0.0, 0.09, abs(r - (4.4 + float(i) * 2.1)));
-        float pulse = 0.5 + 0.5 * sin(r * 0.85 - t * 1.4); float rim = mix(0.12, 1.0, smoothstep(6.0, 8.6, r));                      // outward travelling ring
-        float sheen = pow(abs(cos(a - 0.6 + t * 0.04)), 10.0);
-        col += vec3(0.034,0.038,0.052) * line * band * tracks * (0.65 + 0.35 * pulse) * rim;
-        col += vec3(0.20,0.15,0.09) * line * band * tracks * sheen * 0.16 * rim;
-        col *= mix(1.0, 0.82, (1.0 - tracks) * band * rim);
-        // centre: plain dark label, one thin ring, spindle
-        float lab = 1.0 - smoothstep(2.18, 2.22, r);
-        col = mix(col, vec3(0.034,0.037,0.056), lab);
+    fragmentShader: `varying vec3 vP;
+      void main(){ float r = length(vP.xz);
+        vec3 col = vec3(0.034,0.037,0.056);
         col += vec3(0.05,0.05,0.045) * (1.0 - smoothstep(0.0, 0.02, abs(r - 2.25)));
         col = mix(col, vec3(0.16,0.15,0.13), 1.0 - smoothstep(0.10, 0.12, r));
         col = mix(col, vec3(0.01), 1.0 - smoothstep(0.05, 0.065, r));
-        col += vec3(0.16,0.15,0.13) * (1.0 - smoothstep(0.0, 0.05, abs(r - 10.85)));
         if (vP.y < -0.01) col = vec3(0.04,0.045,0.07);
-        gl_FragColor = vec4(col, 1.0);
-      }` });
-  disc.onBeforeRender = () => { U.uTime.value = still ? 0 : (performance.now() - t0) / 1000; };
+        gl_FragColor = vec4(col, 1.0); }` });
   if (edge) edge.material = new THREE.MeshStandardMaterial({ color:0x26262a, roughness:0.4, metalness:0.7 });
-  // outline: big irregular triangles (Bowyer-Watson Delaunay over sparse points + a few hubs)
-  let seed = 61; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // points: Poisson-ish fill of the record + rings at the label edge and the rim
+  let seed = 62; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const P = [];
-  for (let k = 0; k < 6; k++) { const t = (k + rnd() * 0.5) / 6 * 6.2832, R = 2.5; P.push([Math.cos(t) * R, Math.sin(t) * R]); }
-  for (let n = 0; n < 400 && P.length < 44; n++) { const t = rnd() * 6.2832, R = 3.2 + Math.sqrt(rnd()) * 7.4, p = [Math.cos(t) * R, Math.sin(t) * R];
-    if (P.every(q => Math.hypot(q[0] - p[0], q[1] - p[1]) > 2.1)) P.push(p); }
-  for (let k = 0; k < 14; k++) { const t = (k + rnd() * 0.6) / 14 * 6.2832, R = 10.4 + rnd() * 0.3; P.push([Math.cos(t) * R, Math.sin(t) * R]); }
+  for (let k = 0; k < 20; k++) { const t = k / 20 * 6.2832; P.push([Math.cos(t) * 2.3, Math.sin(t) * 2.3]); }
+  for (let k = 0; k < 64; k++) { const t = (k + rnd() * 0.4) / 64 * 6.2832; P.push([Math.cos(t) * 10.95, Math.sin(t) * 10.95]); }
+  for (let n = 0; n < 6000 && P.length < 330; n++) { const t = rnd() * 6.2832, R = 2.6 + Math.sqrt(rnd()) * 8.1, p = [Math.cos(t) * R, Math.sin(t) * R];
+    const d = 1.45 - 0.55 * RIM(p[0], p[1]); if (P.every(q => Math.hypot(q[0] - p[0], q[1] - p[1]) > d)) P.push(p); }
   const big = [[-100, -100], [100, -100], [0, 100]]; let T = [[...big]];
   const cc = (t) => { const [a, b, c] = t, d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
     const ux = ((a[0] ** 2 + a[1] ** 2) * (b[1] - c[1]) + (b[0] ** 2 + b[1] ** 2) * (c[1] - a[1]) + (c[0] ** 2 + c[1] ** 2) * (a[1] - b[1])) / d;
@@ -1004,20 +988,43 @@ function holoVinyl(root) {
     const E = []; for (const t of bad) for (let i = 0; i < 3; i++) { const e = [t[i], t[(i + 1) % 3]];
       const j = E.findIndex(f => (f[0] === e[1] && f[1] === e[0]) || (f[0] === e[0] && f[1] === e[1])); if (j >= 0) E.splice(j, 1); else E.push(e); }
     T = T.filter(t => !bad.includes(t)); for (const e of E) T.push([e[0], e[1], p]); }
-  T = T.filter(t => !t.some(v => big.includes(v)));
-  const y = 0.012, hw = 0.03, lp = [], la = [], fp = [], fa = [], seen = new Set();
-  const fade = (x, z) => { const r = Math.hypot(x, z), k = Math.min(1, Math.max(0, (r - 6.4) / 2.6)); return k * k * (3 - 2 * k); };
-  const quad = (p, q) => { const dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz) || 1, nx = -dz / L * hw, nz = dx / L * hw;
-    lp.push(p[0] + nx, y, p[1] + nz, q[0] + nx, y, q[1] + nz, q[0] - nx, y, q[1] - nz, p[0] + nx, y, p[1] + nz, q[0] - nx, y, q[1] - nz, p[0] - nx, y, p[1] - nz);
-    for (const v of [p, q, q, p, q, p]) la.push(0.945, 0.925, 0.886, 0.05 * fade(v[0], v[1])); };
+  T = T.filter(t => !t.some(v => big.includes(v)) && Math.hypot((t[0][0] + t[1][0] + t[2][0]) / 3, (t[0][1] + t[1][1] + t[2][1]) / 3) > 2.32);
+  // height per vertex: rough relief at the rim, near-flat under the sets
+  const H = new Map(); for (const p of P) H.set(p, 0.004 + (0.006 + 0.17 * RIM(p[0], p[1])) * rnd());
+  const pos = [], ep = [], ec = [], seen = new Set();
   for (const t of T) {
-    for (let i = 0; i < 3; i++) { const p = t[i], q = t[(i + 1) % 3], k = [p, q].map(v => v.join()).sort().join('|'); if (seen.has(k)) continue; seen.add(k); quad(p, q); }
-    if (rnd() < 0.09) for (const p of t) { fp.push(p[0], y - 0.002, p[1]); fa.push(0.72, 0.53, 0.17, 0.06 * fade(p[0], p[1])); } }
-  const holo = new THREE.Group(); holo.name = 'HOLO_vinyl';
-  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setAttribute('color', new THREE.Float32BufferAttribute(la, 4));
-  holo.add(new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, depthWrite:false, side:THREE.DoubleSide })));
-  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3)); fg.setAttribute('color', new THREE.Float32BufferAttribute(fa, 4));
-  holo.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, depthWrite:false, side:THREE.DoubleSide })));
+    for (const p of t) pos.push(p[0], H.get(p), p[1]);
+    for (let i = 0; i < 3; i++) { const p = t[i], q = t[(i + 1) % 3], k = [p, q].map(v => v.join()).sort().join('|'); if (seen.has(k)) continue; seen.add(k);
+      ep.push(p[0], H.get(p) + 0.002, p[1], q[0], H.get(q) + 0.002, q[1]);
+      for (const v of [p, q]) { const w = 0.06 + 0.40 * RIM(v[0], v[1]); ec.push(1.0, 0.64, 0.22, w); } } }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); if (g.index === null) g.computeVertexNormals();
+  const facets = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: U, side: THREE.DoubleSide,
+    vertexShader: `varying vec3 vW; varying vec3 vP; void main(){ vP = position; vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uTime; varying vec3 vW; varying vec3 vP;
+      void main(){
+        vec3 N = normalize(cross(dFdx(vW), dFdy(vW))); if (N.y < 0.0) N = -N;
+        vec3 V = normalize(cameraPosition - vW), L = normalize(vec3(0.80, 0.22, 0.55));
+        float r = length(vP.xz), a = atan(vP.z, vP.x), t = uTime, rim = smoothstep(5.6, 9.4, r);
+        float tilt = 1.0 - N.y;                                                 // how far this facet leans
+        float diff = max(dot(N, L), 0.0);
+        vec3 col = vec3(0.026,0.030,0.050) * (0.55 + 2.6 * diff * (0.35 + 0.65 * rim)) + vec3(0.010,0.012,0.020) * (1.0 - rim);
+        // gold holographic catch-light on facets that lean toward the light/viewer
+        float spec = pow(max(dot(reflect(-L, N), V), 0.0), 18.0);
+        float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+        col += vec3(0.95,0.62,0.22) * (spec * 0.16 + fres * 0.02 + tilt * 1.6) * (0.15 + 0.85 * rim);
+        // grooves + vibration ride on the facets
+        float rv = r + 0.020 * sin(a * 9.0 + t * 1.1) * sin(r * 1.3 - t * 0.7) + 0.010 * sin(a * 23.0 - t * 1.9);
+        float f = 30.0, w = fwidth(rv) * f;
+        float line = smoothstep(0.55, 0.95, abs(fract(rv * f / 6.2832) - 0.5) * 2.0) * (1.0 - smoothstep(0.35, 1.2, w));
+        float pulse = 0.5 + 0.5 * sin(r * 0.85 - t * 1.4);
+        col += vec3(0.030,0.034,0.048) * line * (0.65 + 0.35 * pulse) * mix(0.15, 1.0, rim) * (0.6 + 0.8 * diff);
+        gl_FragColor = vec4(col, 1.0);
+      }` }));
+  facets.onBeforeRender = tick; facets.name = 'HOLO_vinyl_facets';
+  const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.Float32BufferAttribute(ep, 3)); eg.setAttribute('color', new THREE.Float32BufferAttribute(ec, 4));
+  const edges = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ vertexColors:true, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false }));
+  edges.name = 'HOLO_vinyl_edges';
+  const holo = new THREE.Group(); holo.name = 'HOLO_vinyl'; holo.add(facets, edges);
   disc.parent.add(holo); holo.position.copy(disc.position); holo.quaternion.copy(disc.quaternion);
 }
 
