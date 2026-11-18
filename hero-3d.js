@@ -951,7 +951,7 @@ function buildOM() {
   return g;
 }
 
-// ---- v060: holographic vinyl turntable (outline after the painted wall; grooves + vibration) ----
+// ---- v061 (on v060): holographic vinyl turntable, rim only (outline after the painted wall; grooves + vibration) ----
 function holoVinyl(root) {
   const disc = root.getObjectByName('TURNTABLE'), edge = root.getObjectByName('TURNTABLE_edge');
   if (!disc) return;
@@ -971,15 +971,15 @@ function holoVinyl(root) {
         float line = smoothstep(0.55, 0.95, groove) * (1.0 - smoothstep(0.35, 1.2, w));
         float band = step(2.35, r) * step(r, 10.65);
         float tracks = 1.0; for (int i = 0; i < 3; i++) tracks *= smoothstep(0.0, 0.09, abs(r - (4.4 + float(i) * 2.1)));
-        float pulse = 0.5 + 0.5 * sin(r * 0.85 - t * 1.4);                      // outward travelling ring
+        float pulse = 0.5 + 0.5 * sin(r * 0.85 - t * 1.4); float rim = mix(0.12, 1.0, smoothstep(6.0, 8.6, r));                      // outward travelling ring
         float sheen = pow(abs(cos(a - 0.6 + t * 0.04)), 10.0);
-        col += vec3(0.055,0.060,0.080) * line * band * tracks * (0.55 + 0.45 * pulse);
-        col += vec3(0.20,0.15,0.09) * line * band * tracks * sheen * 0.35;
-        col *= mix(1.0, 0.7, (1.0 - tracks) * band);
+        col += vec3(0.034,0.038,0.052) * line * band * tracks * (0.65 + 0.35 * pulse) * rim;
+        col += vec3(0.20,0.15,0.09) * line * band * tracks * sheen * 0.16 * rim;
+        col *= mix(1.0, 0.82, (1.0 - tracks) * band * rim);
         // centre: plain dark label, one thin ring, spindle
         float lab = 1.0 - smoothstep(2.18, 2.22, r);
         col = mix(col, vec3(0.034,0.037,0.056), lab);
-        col += vec3(0.12,0.11,0.10) * (1.0 - smoothstep(0.0, 0.02, abs(r - 2.25)));
+        col += vec3(0.05,0.05,0.045) * (1.0 - smoothstep(0.0, 0.02, abs(r - 2.25)));
         col = mix(col, vec3(0.16,0.15,0.13), 1.0 - smoothstep(0.10, 0.12, r));
         col = mix(col, vec3(0.01), 1.0 - smoothstep(0.05, 0.065, r));
         col += vec3(0.16,0.15,0.13) * (1.0 - smoothstep(0.0, 0.05, abs(r - 10.85)));
@@ -1005,17 +1005,19 @@ function holoVinyl(root) {
       const j = E.findIndex(f => (f[0] === e[1] && f[1] === e[0]) || (f[0] === e[0] && f[1] === e[1])); if (j >= 0) E.splice(j, 1); else E.push(e); }
     T = T.filter(t => !bad.includes(t)); for (const e of E) T.push([e[0], e[1], p]); }
   T = T.filter(t => !t.some(v => big.includes(v)));
-  const y = 0.012, hw = 0.035, lp = [], fp = [], seen = new Set();
+  const y = 0.012, hw = 0.03, lp = [], la = [], fp = [], fa = [], seen = new Set();
+  const fade = (x, z) => { const r = Math.hypot(x, z), k = Math.min(1, Math.max(0, (r - 6.4) / 2.6)); return k * k * (3 - 2 * k); };
   const quad = (p, q) => { const dx = q[0] - p[0], dz = q[1] - p[1], L = Math.hypot(dx, dz) || 1, nx = -dz / L * hw, nz = dx / L * hw;
-    lp.push(p[0] + nx, y, p[1] + nz, q[0] + nx, y, q[1] + nz, q[0] - nx, y, q[1] - nz, p[0] + nx, y, p[1] + nz, q[0] - nx, y, q[1] - nz, p[0] - nx, y, p[1] - nz); };
+    lp.push(p[0] + nx, y, p[1] + nz, q[0] + nx, y, q[1] + nz, q[0] - nx, y, q[1] - nz, p[0] + nx, y, p[1] + nz, q[0] - nx, y, q[1] - nz, p[0] - nx, y, p[1] - nz);
+    for (const v of [p, q, q, p, q, p]) la.push(0.945, 0.925, 0.886, 0.05 * fade(v[0], v[1])); };
   for (const t of T) {
     for (let i = 0; i < 3; i++) { const p = t[i], q = t[(i + 1) % 3], k = [p, q].map(v => v.join()).sort().join('|'); if (seen.has(k)) continue; seen.add(k); quad(p, q); }
-    if (rnd() < 0.09) for (const p of t) fp.push(p[0], y - 0.002, p[1]); }
+    if (rnd() < 0.09) for (const p of t) { fp.push(p[0], y - 0.002, p[1]); fa.push(0.72, 0.53, 0.17, 0.06 * fade(p[0], p[1])); } }
   const holo = new THREE.Group(); holo.name = 'HOLO_vinyl';
-  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
-  holo.add(new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color:0xf1ece2, transparent:true, opacity:0.075, depthWrite:false, side:THREE.DoubleSide })));
-  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3));
-  holo.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color:0xb8862b, transparent:true, opacity:0.10, depthWrite:false, side:THREE.DoubleSide })));
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); lg.setAttribute('color', new THREE.Float32BufferAttribute(la, 4));
+  holo.add(new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, depthWrite:false, side:THREE.DoubleSide })));
+  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3)); fg.setAttribute('color', new THREE.Float32BufferAttribute(fa, 4));
+  holo.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, depthWrite:false, side:THREE.DoubleSide })));
   disc.parent.add(holo); holo.position.copy(disc.position); holo.quaternion.copy(disc.quaternion);
 }
 
