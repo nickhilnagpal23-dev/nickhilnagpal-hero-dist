@@ -592,7 +592,10 @@ function setBeat(i) { if (i === beatI) return; beatI = i;
   medEls.forEach(el => { const on = el.dataset.beats.split(' ').includes(String(i)); if (on !== el.classList.contains('on')) { el.classList.toggle('on', on); el.setAttribute('aria-hidden', on ? 'false' : 'true'); el.classList.remove('sound');
     el.querySelectorAll('a,button').forEach(a => a.tabIndex = on ? 0 : -1); mediaOn(el, on); } });
   credEls.forEach(c => c.classList.toggle('on', c.dataset.beats === String(i)));
-  __R.querySelector('.scrollhint').style.opacity = i === 0 ? 1 : 0; }
+  __R.querySelector('.scrollhint').style.opacity = i === 0 ? 1 : 0;
+  const op = __R.getElementById('ow-open');   // opener montage: full frame behind the first beat, fades to the 3D on the first scroll
+  if (op) { const v = op.querySelector('video'); op.classList.toggle('on', i === 0);
+    if (i === 0) { if (!v.src) { v.muted = true; v.playsInline = true; v.loop = true; v.src = BASE + 'media/ow_open.mp4'; } if (!reduce) v.play().catch(() => {}); } else v.pause(); } }
 function resize() { const w = sec.clientWidth || innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 let mx = 0, my = 0; addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; mx = e.clientX / innerWidth * 2 - 1; my = e.clientY / innerHeight * 2 - 1; }, { passive:true });
