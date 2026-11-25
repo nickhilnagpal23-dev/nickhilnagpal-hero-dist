@@ -7,10 +7,6 @@
     const host = document.getElementById('nn-ow'); if (!host || host.shadowRoot) return;
     const root = host.attachShadow({ mode:'open' });
     root.innerHTML = '<style>' + CSS + '</style>' + HTML.split('BASE/').join(base);
-    // documentary clips: a thumbnail until clicked (no third-party load before a tap)
-    root.querySelectorAll('.yt').forEach(el => el.querySelector('button').addEventListener('click', () => {
-      const f = document.createElement('iframe'); f.src = el.dataset.src; f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen'; f.allowFullscreen = true; f.title = 'Outer West documentary';
-      el.replaceChildren(f); f.focus(); }));
     const beats = [...root.querySelectorAll('#ow-beats .beat')], sec = root.getElementById('ow-3d');
     const fallback = () => { host.classList.add('nogl'); root.getElementById('ow-sticky').style.backgroundImage = `url(${base}media/ow_saloon.jpg)`;
       const tick = () => { const r = sec.getBoundingClientRect(), p = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - innerHeight)));
