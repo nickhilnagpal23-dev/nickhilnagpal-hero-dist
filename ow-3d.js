@@ -639,7 +639,7 @@ function introOn(i) {
 const barsEl = __R.getElementById('ow-bars');
 function barsTick(i, t) {   // 2.39:1 letterbox held at the cut, then opened as the dolly reveals the stage
   if (!barsEl) return; const W = sec.clientWidth || innerWidth, H = innerHeight, bh = Math.max(0, (H - W / OW.aspect) / 2);
-  let k = 0; if (i === INTRO_I && introState === 'revealed') k = reduce ? 0 : 1 - THREE.MathUtils.smoothstep(t - revealT, 0.7, 2.2);
+  let k = 0; if (i === INTRO_I && introState === 'revealed') k = reduce ? 0 : 1 - THREE.MathUtils.smoothstep(t - revealT, 0.8, 2.6);
   barsEl.style.setProperty('--bh', (bh * k).toFixed(1) + 'px'); }
 function progress() { const r = sec.getBoundingClientRect(); const span = Math.max(1, r.height - innerHeight); return THREE.MathUtils.clamp(-r.top / span, 0, 1); }
 let beatI = -1;
@@ -668,9 +668,14 @@ function frame() {
   const sh = SHOT[shk] || SHOT.set; const atShot = shk === 'shotcam';
   const tfov = atShot ? shotFov() : sh.fov;
   const LK = reduce ? 1 : (i === INTRO_I && introState === 'revealed' ? 0.022 : 0.05);
-  curPos.lerp(new V3(...sh.pos), LK); curLook.lerp(new V3(...sh.look), LK); curFov += (tfov - curFov) * LK;
-  const near = curPos.distanceTo(new V3(...SHOT.shotcam.pos)) < 1.6; NEARCAM.forEach(o => o.visible = !near);
-  const calm = atShot || near;   // no drift or tilt while matching the film frame
+  const REV_HOLD = 0.8, REV_DUR = 3.5;
+  const inReveal = i === INTRO_I && introState === 'revealed' && !reduce && t - revealT < REV_HOLD + REV_DUR;
+  if (inReveal) {   // fixed move: hold the matched film frame, then an eased dolly back to the stage view
+    const e = THREE.MathUtils.smootherstep(t - revealT, REV_HOLD, REV_HOLD + REV_DUR), A = SHOT.shotcam, B = SHOT.wall;
+    curPos.set(...A.pos).lerp(new V3(...B.pos), e); curLook.set(...A.look).lerp(new V3(...B.look), e); curFov = THREE.MathUtils.lerp(shotFov(), B.fov, e);
+  } else { curPos.lerp(new V3(...sh.pos), LK); curLook.lerp(new V3(...sh.look), LK); curFov += (tfov - curFov) * LK; }
+  const near = curPos.distanceTo(new V3(...SHOT.shotcam.pos)) < 1.6 || i === INTRO_I; NEARCAM.forEach(o => o.visible = !near);
+  const calm = atShot || near || inReveal;   // no drift or tilt while matching the film frame
   const drift = reduce || calm ? 0 : Math.sin(t * 0.3) * 0.03 + mx * 0.05;
   const pos = curPos.clone().sub(curLook).applyAxisAngle(new V3(0, 1, 0), drift).add(curLook); pos.y += reduce || calm ? 0 : -my * 0.25;
   camera.position.copy(pos); camera.lookAt(curLook); camera.fov = curFov * (innerWidth <= 800 && !calm ? 1.3 : 1); camera.updateProjectionMatrix();
