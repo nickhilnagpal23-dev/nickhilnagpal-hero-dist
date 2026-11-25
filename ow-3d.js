@@ -604,6 +604,10 @@ const setups = {}, MOVERS = [], NEARCAM = [];
   for (const c of inner.children) if (c.isMesh && c.material && c.material.map && Math.abs(c.position.y - (OW.C[1] + 0.02)) < 1e-3 && Math.abs(c.position.x - OW.C[0]) < 1e-3) NEARCAM.push(c);
   __H.classList.add('ready');
 })();
+let openPaused = false;
+{ const opb = __R.querySelector('.open-pause'), ov = __R.querySelector('#ow-open video');
+  if (opb && ov) opb.addEventListener('click', () => { openPaused = !openPaused; if (openPaused) ov.pause(); else ov.play().catch(() => {});
+    opb.textContent = openPaused ? 'Play' : 'Pause'; opb.setAttribute('aria-pressed', String(openPaused)); opb.setAttribute('aria-label', openPaused ? 'Play the montage' : 'Pause the montage'); }); }
 const sec = __R.getElementById('ow-3d'), beatEls = [...__R.querySelectorAll('#ow-beats .beat')], medEls = [...__R.querySelectorAll('#ow-media .med')], credEls = [...__R.querySelectorAll('#ow-media .credit')];
 const BASE = (globalThis.__nnOW && globalThis.__nnOW.base) || '';
 const YT = __R.getElementById('ow-copy').dataset.yt;
@@ -617,6 +621,7 @@ function mediaOn(el, on) {
     if (!on) box.replaceChildren(); }
   if (kind === 'docfull' && !on) el.querySelector('.frame').replaceChildren();
 }
+medEls.forEach(el => { const v = el.dataset.kind === 'monitor' && el.querySelector('video'); if (v) { v.style.cursor = 'pointer'; v.addEventListener('click', () => { v.paused ? v.play().catch(() => {}) : v.pause(); }); } });
 medEls.forEach(el => { const b = el.querySelector('button.snd'); if (!b) return;
   b.addEventListener('click', () => { const box = el.querySelector('.frame'), f = document.createElement('iframe');
     f.src = el.dataset.kind === 'docfull' ? ytSrc(0, 0, true) : ytSrc(+el.dataset.start, +el.dataset.end || 0, true);
@@ -661,7 +666,7 @@ function musicFade(to, sec) { if (music.gain) { const g = music.gain.gain, now =
   else if (music.el) music.el.volume = to; }
 let musicWant = false;
 function musicTick(i) {   // audible while the reader is in the intro or watching the reveal; resumes where it paused
-  if (!music.on || !music.el) return; const want = (i === INTRO_I || i === INTRO_I + 1) && !music.el.ended;
+  if (!music.on || !music.el) return; const want = i === INTRO_I && introState === 'scrub' && !music.el.ended;   // the intro's own music: fades as the reveal hands off
   if (want === musicWant) return; musicWant = want;
   if (want) { if (music.ctx && music.ctx.state === 'suspended') music.ctx.resume(); music.el.playbackRate = 1.0; music.el.play().catch(() => {}); musicFade(0.75, 0.5); }
   else { musicFade(0, 0.4); setTimeout(() => { if (!musicWant) music.el.pause(); }, 450); }
@@ -673,7 +678,7 @@ if (sndBtn) sndBtn.addEventListener('click', () => {
 const barsEl = __R.getElementById('ow-bars');
 function barsTick(i, t) {   // 2.39:1 letterbox held at the cut, then opened as the dolly reveals the stage
   if (!barsEl) return; const W = sec.clientWidth || innerWidth, H = innerHeight, bh = Math.max(0, (H - W / INTRO_AR) / 2);
-  let k = 0; if (i === INTRO_I && introState === 'revealed') k = reduce ? 0 : 1 - THREE.MathUtils.smoothstep(t - revealT, 0.8, 2.6);
+  let k = 0; if ((i === INTRO_I || i === INTRO_I + 1) && introState === 'revealed') k = reduce ? 0 : 1 - THREE.MathUtils.smoothstep(t - revealT, 1.0, 3.4);
   barsEl.style.setProperty('--bh', (bh * k).toFixed(1) + 'px'); }
 const WT = OWP_BEATS.map(b => b.weight || 1), WSUM = WT.reduce((a, b) => a + b, 0);
 function progress() { const r = sec.getBoundingClientRect(); const span = Math.max(1, r.height - innerHeight); return THREE.MathUtils.clamp(-r.top / span, 0, 1); }
@@ -684,29 +689,35 @@ function setBeat(i) { if (i === beatI) return; beatI = i;
     el.querySelectorAll('a,button').forEach(a => a.tabIndex = on ? 0 : -1); mediaOn(el, on); } });
   credEls.forEach(c => c.classList.toggle('on', c.dataset.beats === String(i)));
   __R.querySelector('.scrollhint').style.opacity = i === 0 ? 1 : 0;
-  if (sndBtn) { const sv = i === INTRO_I || i === INTRO_I + 1; sndBtn.classList.toggle('on', sv); sndBtn.tabIndex = sv ? 0 : -1; }
+  if (sndBtn) { const sv = i === INTRO_I; sndBtn.classList.toggle('on', sv); sndBtn.tabIndex = sv ? 0 : -1; }
+  const opb = __R.querySelector('.open-pause'); if (opb) { opb.classList.toggle('on', i === 0 && !reduce); opb.tabIndex = i === 0 ? 0 : -1; }
+  if (i === 0 && introV && introV.preload !== 'auto') setTimeout(() => { if (introV) introV.preload = 'auto'; }, 1200);   // buffer the intro only once the reader is here
   const op = __R.getElementById('ow-open');   // opener montage: full frame behind the first beat, fades to the 3D on the first scroll
   if (op) { const v = op.querySelector('video'); op.classList.toggle('on', i === 0);
-    if (i === 0) { if (!v.src) { v.muted = true; v.playsInline = true; v.loop = true; v.src = BASE + 'media/ow_open.mp4'; } if (!reduce) v.play().catch(() => {}); } else v.pause(); } }
+    if (i === 0) { if (!v.src) { v.muted = true; v.playsInline = true; v.loop = true; v.src = BASE + 'media/ow_open.mp4'; } if (!reduce && !openPaused) v.play().catch(() => {}); } else v.pause(); } }
 function resize() { const w = sec.clientWidth || innerWidth, h = innerHeight; renderer.setSize(w, h, false);
   const pr = renderer.getPixelRatio(); dofRT.setSize(Math.round(w * pr), Math.round(h * pr)); dofMat.uniforms.res.value.set(w * pr, h * pr); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 let mx = 0, my = 0; addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; mx = e.clientX / innerWidth * 2 - 1; my = e.clientY / innerHeight * 2 - 1; }, { passive:true });
 let visible = true; new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(sec);
-const clock = new THREE.Clock();
+const clock = new THREE.Clock(); let lastT = 0;
+// all easing is time-based (frame-rate independent: 60 Hz and 120 Hz displays move at the same speed)
+const CAM_RATE = 1.3, FOCUS_RATE = 1.6;   // 1/s: a camera move settles ~90 % in ~1.8 s
+const REV_HOLD = 1.0, REV_DUR = 4.5;      // reveal: hold the matched film frame 1 s, then a 4.5 s eased dolly back
+const ease = (rate, dt) => 1 - Math.exp(-rate * dt);
 function frame() {
   requestAnimationFrame(frame);
   if (!visible || document.hidden) return;
-  const t = clock.getElapsedTime(), p = progress();
+  const t = clock.getElapsedTime(), p = progress(), dt = Math.min(0.1, Math.max(0, t - lastT)); lastT = t;
   let acc = p * WSUM, i = 0; while (i < OWP_BEATS.length - 1 && acc >= WT[i]) { acc -= WT[i]; i++; }
-  const local = Math.min(1, acc / WT[i]), f = i + local; setBeat(i); introTick(i, local); musicTick(i);
+  const local = Math.min(1, acc / WT[i]), f = i + local; setBeat(i); introTick(i, local); musicTick(i); if (sndBtn) { const sv = i === INTRO_I && introState === 'scrub'; if (sv !== sndBtn.classList.contains('on')) { sndBtn.classList.toggle('on', sv); sndBtn.tabIndex = sv ? 0 : -1; } }
   let shk = OWP_BEATS[i].shot;
   if (i === INTRO_I) shk = introState === 'revealed' ? 'wall' : 'shotcam';   // after the cut, the dolly back reveals the stage
   const sh = SHOT[shk] || SHOT.set; const atShot = shk === 'shotcam';
   const tfov = atShot ? shotFov() : sh.fov;
-  const LK = reduce ? 1 : (i === INTRO_I && introState === 'revealed' ? 0.022 : 0.05);
-  const REV_HOLD = 0.8, REV_DUR = 3.5;
-  const inReveal = i === INTRO_I && introState === 'revealed' && !reduce && t - revealT < REV_HOLD + REV_DUR;
+  const LK = reduce ? 1 : ease(CAM_RATE, dt);
+  // the reveal plays out in full even if the reader keeps scrolling into the next beat (same destination framing)
+  const inReveal = (i === INTRO_I || i === INTRO_I + 1) && introState === 'revealed' && !reduce && t - revealT < REV_HOLD + REV_DUR;
   if (inReveal) {   // fixed move: hold the matched film frame, then an eased dolly back to the stage view
     const e = THREE.MathUtils.smootherstep(t - revealT, REV_HOLD, REV_HOLD + REV_DUR), A = SHOT.shotcam, B = SHOT.wall;
     curPos.set(...A.pos).lerp(new V3(...B.pos), e); curLook.set(...A.look).lerp(new V3(...B.look), e); curFov = THREE.MathUtils.lerp(shotFov(), B.fov, e);
@@ -731,7 +742,7 @@ function frame() {
   const bf = OWP_BEATS[i].focus || 'scene', textF = bf === 'text';
   const fp = new V3(...FOCUS[FOCUS_OF[shk] || 'set']), fd = textF ? 1.2 : camera.position.distanceTo(fp);
   const pr = renderer.getPixelRatio(), hpx = innerHeight * pr, apT = (textF ? 26 : (calm ? 30 : 22)) * hpx / 900;
-  const kf = reduce ? 1 : 0.06; focusD += (fd - focusD) * kf; apNow += (apT - apNow) * kf;
+  const kf = reduce ? 1 : ease(FOCUS_RATE, dt); focusD += (fd - focusD) * kf; apNow += (apT - apNow) * kf;
   const U = dofMat.uniforms; U.focus.value = focusD; U.ap.value = apNow; U.maxc.value = (textF ? 14 : 9) * hpx / 900; U.near.value = camera.near; U.far.value = camera.far;
   renderer.setRenderTarget(dofRT); renderer.render(scene, camera); renderer.setRenderTarget(null); renderer.render(dofScene, dofCam);
 }
