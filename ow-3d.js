@@ -630,26 +630,41 @@ medEls.forEach(el => { const b = el.querySelector('button.snd'); if (!b) return;
 // its last frame is the film's final pixel; reaching it cuts to the 3D at the shot camera and dollies back to reveal the stage.
 // Scrolling back up cuts back into the video. Music is separate: it plays at 1.0 speed through a light reverb, never scrubbed,
 // never restarted, and only fades in/out with position, so scrolling back and forth can't make it louder.
-const introEl = __R.getElementById('ow-intro'), introV = introEl && introEl.querySelector('video'), sndBtn = __R.querySelector('.intro-snd');
+const introEl = __R.getElementById('ow-intro'), introC = introEl && introEl.querySelector('canvas'), sndBtn = __R.querySelector('.intro-snd');
 const INTRO_I = OWP_BEATS.findIndex(b => b.intro), INTRO_AR = 1280 / 544, REV_AT = 0.97;
 let introState = 'idle', revealT = -1, introLocal = 0;   // idle -> scrub -> revealed
 function introShow(on) { if (!introEl) return; introEl.classList.toggle('on', on); }
 function introReveal() { if (introState === 'revealed') return; introState = 'revealed'; introShow(false);
   curPos.set(...SHOT.shotcam.pos); curLook.set(...SHOT.shotcam.look); curFov = shotFov(); revealT = clock.getElapsedTime(); }
-let seekBusy = false, seekWant = -1;
-function introSeek(tt) { if (!introV || !isFinite(introV.duration)) return; seekWant = tt; if (seekBusy) return;
-  if (Math.abs(introV.currentTime - tt) < 1 / 48) return; seekBusy = true; introV.currentTime = tt; }
-if (introV) { introV.muted = true; introV.playsInline = true; introV.src = BASE + 'media/ow_intro.mp4';
-  introV.addEventListener('seeked', () => { seekBusy = false; if (seekWant >= 0 && Math.abs(introV.currentTime - seekWant) >= 1 / 48) introSeek(seekWant); }); }
+// Frames, not video seeking: iOS Safari doesn't paint seeks on a muted, never-played video, so the intro is a 12 fps still
+// sequence (212 x 960 px JPEG) drawn on a canvas, loaded coarse-to-fine so a nearby frame is always ready (Apple's product-page technique).
+const IN_N = introC ? +introC.dataset.n : 0, inImg = new Array(IN_N).fill(null), inOk = new Array(IN_N).fill(false);
+let inLoading = false, inDrawn = -1, inWant = 0;
+const inSrc = k => BASE + 'media/intro_frames/f_' + String(k + 1).padStart(3, '0') + '.jpg';
+function introLoad() { if (inLoading || !IN_N) return; inLoading = true;
+  const order = [], seen = new Set(); for (const step of [16, 8, 4, 2, 1]) for (let k = 0; k < IN_N; k += step) if (!seen.has(k)) { seen.add(k); order.push(k); }
+  if (!seen.has(IN_N - 1)) order.splice(1, 0, IN_N - 1); else { order.splice(order.indexOf(IN_N - 1), 1); order.splice(1, 0, IN_N - 1); }   // first and last frames first
+  let next = 0, active = 0; const pump = () => { while (active < 6 && next < order.length) { const k = order[next++], im = new Image(); active++; im.decoding = 'async';
+    im.onload = () => { inOk[k] = true; active--; if (Math.abs(k - inWant) < Math.abs(inDrawn - inWant) || inDrawn < 0) introDraw(inWant, true); pump(); };
+    im.onerror = () => { active--; pump(); }; im.src = inSrc(k); inImg[k] = im; } }; pump(); }
+function introSize() { if (!introC) return; const pr = Math.min(devicePixelRatio || 1, 2), w = introC.clientWidth, h = introC.clientHeight;
+  if (introC.width !== Math.round(w * pr) || introC.height !== Math.round(h * pr)) { introC.width = Math.round(w * pr); introC.height = Math.round(h * pr); inDrawn = -1; introDraw(inWant, true); } }
+function introDraw(k, force) { if (!introC) return; inWant = k; let best = -1;
+  for (let d = 0; d < IN_N; d++) { if (k - d >= 0 && inOk[k - d]) { best = k - d; break; } if (k + d < IN_N && inOk[k + d]) { best = k + d; break; } }
+  if (best < 0 || (best === inDrawn && !force)) return; inDrawn = best;
+  const g = introC.getContext('2d'), W = introC.width, H = introC.height, im = inImg[best], s = Math.min(W / im.naturalWidth, H / im.naturalHeight);
+  const dw = im.naturalWidth * s, dh = im.naturalHeight * s; g.fillStyle = '#000'; g.fillRect(0, 0, W, H); g.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh); }
+addEventListener('resize', introSize);
 function introTick(i, local) {
   if (!introEl) return;
   if (i < INTRO_I) { if (introState !== 'idle') { introState = 'idle'; introShow(false); } return; }
   if (i > INTRO_I) { if (introState !== 'revealed') introReveal(); return; }
   introLocal = local;
   if (reduce) { introReveal(); return; }
-  if (local >= REV_AT) { introSeek(Math.max(0, (introV.duration || 17.68) - 0.04)); introReveal(); return; }
-  if (introState !== 'scrub') { introState = 'scrub'; introShow(true); }
-  introSeek(local / REV_AT * Math.max(0, (introV.duration || 17.68) - 0.04));
+  introLoad();
+  if (local >= REV_AT) { introDraw(IN_N - 1); introReveal(); return; }
+  if (introState !== 'scrub') { introState = 'scrub'; introShow(true); introSize(); }
+  introDraw(Math.round(local / REV_AT * (IN_N - 1)));
 }
 // music: <audio> -> dry + convolver reverb -> gain. Starts only from the button (a user gesture).
 const music = { el:null, ctx:null, gain:null, on:false, started:false };
@@ -691,7 +706,7 @@ function setBeat(i) { if (i === beatI) return; beatI = i;
   __R.querySelector('.scrollhint').style.opacity = i === 0 ? 1 : 0;
   if (sndBtn) { const sv = i === INTRO_I; sndBtn.classList.toggle('on', sv); sndBtn.tabIndex = sv ? 0 : -1; }
   const opb = __R.querySelector('.open-pause'); if (opb) { opb.classList.toggle('on', i === 0 && !reduce); opb.tabIndex = i === 0 ? 0 : -1; }
-  if (i === 0 && introV && introV.preload !== 'auto') setTimeout(() => { if (introV) introV.preload = 'auto'; }, 1200);   // buffer the intro only once the reader is here
+  if (i === 0) setTimeout(introLoad, 1200);   // load the intro frames only once the reader is here
   const op = __R.getElementById('ow-open');   // opener montage: full frame behind the first beat, fades to the 3D on the first scroll
   if (op) { const v = op.querySelector('video'); op.classList.toggle('on', i === 0);
     if (i === 0) { if (!v.src) { v.muted = true; v.playsInline = true; v.loop = true; v.src = BASE + 'media/ow_open.mp4'; } if (!reduce && !openPaused) v.play().catch(() => {}); } else v.pause(); } }
