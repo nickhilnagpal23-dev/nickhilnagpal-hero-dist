@@ -722,7 +722,7 @@ function frame() {
     const e = THREE.MathUtils.smootherstep(t - revealT, REV_HOLD, REV_HOLD + REV_DUR), A = SHOT.shotcam, B = SHOT.wall;
     curPos.set(...A.pos).lerp(new V3(...B.pos), e); curLook.set(...A.look).lerp(new V3(...B.look), e); curFov = THREE.MathUtils.lerp(shotFov(), B.fov, e);
   } else { curPos.lerp(new V3(...sh.pos), LK); curLook.lerp(new V3(...sh.look), LK); curFov += (tfov - curFov) * LK; }
-  const near = curPos.distanceTo(new V3(...SHOT.shotcam.pos)) < 1.6 || i === INTRO_I; NEARCAM.forEach(o => o.visible = !near);
+  const near = curPos.distanceTo(new V3(...SHOT.shotcam.pos)) < 1.6 || i === INTRO_I || inReveal; NEARCAM.forEach(o => o.visible = !near);
   const calm = atShot || near || inReveal;   // no drift or tilt while matching the film frame
   const drift = reduce || calm ? 0 : Math.sin(t * 0.3) * 0.03 + mx * 0.05;
   const pos = curPos.clone().sub(curLook).applyAxisAngle(new V3(0, 1, 0), drift).add(curLook); pos.y += reduce || calm ? 0 : -my * 0.25;
