@@ -560,25 +560,31 @@ const SHOT = {
 const SHOT_TH = 0.25, SHOT_TV = SHOT_TH / OW.aspect;
 const shotFov = () => { const a = camera.aspect; return a < OW.aspect ? 2 * Math.atan(SHOT_TH / a) * 180 / Math.PI : 2 * Math.atan(SHOT_TV) * 180 / Math.PI; };
 const V3 = THREE.Vector3;
-// ---- depth of field (Nickhil 2026-11-24): focus where the reader should look; the LED wall's low-res cube parallax behind goes soft
+// ---- depth of field, like looking through a real camera (Nickhil 2026-11-24): each beat focuses on what carries the story,
+// either a subject in the 3D (actors, the rolling decks) or the reader's text/overlay (then the whole stage racks soft behind it).
 const FOCUS = { table:[0, 0.9, -5.9], set:[0, 1.0, -5.2], decks:[0, 0.35, -4.6] };
 const FOCUS_OF = { set:'set', wall:'table', far:'set', wallsq:'table', table:'table', move:'decks', side:'set', light:'set', pull:'set', shotcam:'table' };
-// Depth of field on the LED wall only: the wall's cube-parallax image is softened in its own shader, by how far the wall sits
-// behind the beat's focus point (thin-lens circle of confusion). Actors, set and credits stay sharp.
-const WALL_Z = -7.0, BLUR_K = 0.12, BLUR_MAX = 0.012;   // blur radius in wall-uv units
-let blurNow = 0;
-function wallDofPatch() {   // adds a disk blur to the inner-frustum sample of the hero's LED material (verbatim code above)
-  const old = 'if (inF) col = rtOn > 0.5 ? texture2D(rt, uv).rgb : owGrade(texture2D(plate, uv).rgb);';
-  if (!owLEDMat || owLEDMat.fragmentShader.indexOf(old) < 0) { console.warn('[nn-ow] wall DOF patch skipped'); return; }
-  owLEDMat.uniforms.uBlur = { value:0 };
-  owLEDMat.fragmentShader = owLEDMat.fragmentShader
-    .replace('uniform float rtOn;', 'uniform float rtOn; uniform float uBlur;')
-    .replace(old, `if (inF) { if (rtOn > 0.5) { vec3 a = texture2D(rt, uv).rgb; float n = 1.0;
-        for (int k = 0; k < 16; k++) { float fk = float(k); float ang = fk * 2.39996; float rr = uBlur * sqrt((fk + 0.5) / 16.0);
-          a += texture2D(rt, uv + vec2(cos(ang), sin(ang) * 2.37) * rr).rgb; n += 1.0; }
-        col = a / n; } else col = owGrade(texture2D(plate, uv).rgb); }`);
-  owLEDMat.needsUpdate = true;
-}
+const dofRT = new THREE.WebGLRenderTarget(2, 2, { samples:4, type:THREE.HalfFloatType });
+dofRT.depthTexture = new THREE.DepthTexture(2, 2); dofRT.depthTexture.type = THREE.UnsignedIntType;
+const dofMat = new THREE.ShaderMaterial({
+  uniforms:{ tColor:{ value:dofRT.texture }, tDepth:{ value:dofRT.depthTexture }, near:{ value:0.1 }, far:{ value:200 }, focus:{ value:6 }, ap:{ value:0 }, maxc:{ value:10 }, res:{ value:new THREE.Vector2(2, 2) } },
+  vertexShader:`varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader:`precision highp float; varying vec2 vUv; uniform sampler2D tColor, tDepth; uniform float near, far, focus, ap, maxc; uniform vec2 res;
+    float dist(vec2 uv){ float z = texture2D(tDepth, uv).x; return (near * far) / (far - z * (far - near)); }
+    float coc(float d){ return min(maxc, ap * abs(d - focus) / max(d, 0.05)); }   // thin-lens circle of confusion, in px
+    void main(){
+      float c0 = coc(dist(vUv)); vec4 acc = texture2D(tColor, vUv); float wsum = 1.0;
+      if (c0 > 0.5) { for (int k = 0; k < 28; k++) { float fk = float(k);
+        float r = c0 * sqrt((fk + 0.5) / 28.0), a = fk * 2.39996; vec2 o = vec2(cos(a), sin(a)) * r / res; vec2 su = vUv + o;
+        float cs = coc(dist(su)); float w = clamp(cs - r + 1.0, 0.0, 1.0);   // a sharp subject is never smeared by a soft background
+        acc += texture2D(tColor, su) * w; wsum += w; } }
+      gl_FragColor = acc / wsum;
+      #include <colorspace_fragment>
+    }`, depthTest:false, depthWrite:false });
+const dofScene = new THREE.Scene(), dofCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+{ const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), dofMat); q.frustumCulled = false; dofScene.add(q); }
+let focusD = 6, apNow = 0;
+
 const curPos = new V3(...SHOT.set.pos), curLook = new V3(...SHOT.set.look); let curFov = 38;
 const setups = {}, MOVERS = [], NEARCAM = [];
 (async () => {
@@ -587,7 +593,9 @@ const setups = {}, MOVERS = [], NEARCAM = [];
   let la = null; try { la = await load('hero_setup_losangles_v011.glb'); } catch (e) { console.warn('[nn-ow] figures skipped', e); }
   const ow = buildOW(); if (la) owFigures(ow, la);
   addVeniceRig(ow, new V3(0, OW.C[2], 0), OW.pitch, 'ow', /^CAM_ow_body$/);
-  scene.add(ow); setups.outerwest = ow; wallDofPatch();
+  scene.add(ow); setups.outerwest = ow;
+  // credits and labels are transparent text cards: let them record depth where the letters are, so focus treats them as the surface they sit on
+  ow.traverse(o => { const m = o.material; if (o.isMesh && m && m.map && m.transparent && !m.isShaderMaterial) { m.alphaTest = 0.35; m.depthWrite = true; m.needsUpdate = true; } });
   const inner = ow.children.find(c => c.isGroup && c.children.some(k => k.name === 'LED_chapman_ow'));
   for (const c of inner.children) if (/DECKS|SET_on_decks|SET_credit/.test(c.name || '')) MOVERS.push({ o:c, p0:c.position.clone() });
   for (const c of ow.children) if (/^FIG_|ACTOR_ow/.test(c.name || '')) MOVERS.push({ o:c, p0:c.position.clone() });
@@ -653,7 +661,8 @@ function setBeat(i) { if (i === beatI) return; beatI = i;
   const op = __R.getElementById('ow-open');   // opener montage: full frame behind the first beat, fades to the 3D on the first scroll
   if (op) { const v = op.querySelector('video'); op.classList.toggle('on', i === 0);
     if (i === 0) { if (!v.src) { v.muted = true; v.playsInline = true; v.loop = true; v.src = BASE + 'media/ow_open.mp4'; } if (!reduce) v.play().catch(() => {}); } else v.pause(); } }
-function resize() { const w = sec.clientWidth || innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+function resize() { const w = sec.clientWidth || innerWidth, h = innerHeight; renderer.setSize(w, h, false);
+  const pr = renderer.getPixelRatio(); dofRT.setSize(Math.round(w * pr), Math.round(h * pr)); dofMat.uniforms.res.value.set(w * pr, h * pr); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 let mx = 0, my = 0; addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; mx = e.clientX / innerWidth * 2 - 1; my = e.clientY / innerHeight * 2 - 1; }, { passive:true });
 let visible = true; new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(sec);
@@ -690,10 +699,12 @@ function frame() {
         const prev = renderer.getRenderTarget(); renderer.setRenderTarget(owV.rt); renderer.render(owV.scene, owV.cam); renderer.setRenderTarget(prev); }
       owLEDMat.uniforms.rtOn.value = 1; } }
   barsTick(i, t);
-  if (owLEDMat && owLEDMat.uniforms.uBlur) {   // circle of confusion for the wall, focused on the beat's subject
-    const fp = new V3(...FOCUS[FOCUS_OF[shk] || 'set']), dF = camera.position.distanceTo(fp), dW = camera.position.distanceTo(new V3(fp.x, fp.y, WALL_Z));
-    const coc = Math.min(BLUR_MAX, BLUR_K * Math.abs(dW - dF) / Math.max(dW, 0.5) * (8 / Math.max(dF, 2)));
-    blurNow += (coc - blurNow) * (reduce ? 1 : 0.08); owLEDMat.uniforms.uBlur.value = blurNow; }
-  renderer.render(scene, camera);
+  // focus: a 3D subject, or the reader's text (then the stage racks soft behind it); aperture scales with screen height
+  const bf = OWP_BEATS[i].focus || 'scene', textF = bf === 'text';
+  const fp = new V3(...FOCUS[FOCUS_OF[shk] || 'set']), fd = textF ? 1.2 : camera.position.distanceTo(fp);
+  const pr = renderer.getPixelRatio(), hpx = innerHeight * pr, apT = (textF ? 26 : (calm ? 30 : 22)) * hpx / 900;
+  const kf = reduce ? 1 : 0.06; focusD += (fd - focusD) * kf; apNow += (apT - apNow) * kf;
+  const U = dofMat.uniforms; U.focus.value = focusD; U.ap.value = apNow; U.maxc.value = (textF ? 14 : 9) * hpx / 900; U.near.value = camera.near; U.far.value = camera.far;
+  renderer.setRenderTarget(dofRT); renderer.render(scene, camera); renderer.setRenderTarget(null); renderer.render(dofScene, dofCam);
 }
 frame();
